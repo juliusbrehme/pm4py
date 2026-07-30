@@ -30,6 +30,7 @@ from copy import deepcopy
 
 import pm4py
 from pm4py.objects.bpmn.obj import BPMN
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
 from pm4py.objects.ocel.obj import OCEL
 from pm4py.objects.powl.obj import POWL
 from pm4py.objects.heuristics_net.obj import HeuristicsNet
@@ -238,6 +239,11 @@ def convert_to_petri_net(
             from pm4py.objects.conversion.powl import converter
 
             return converter.apply(args[0])
+        if isinstance(args[0], EnhancedProcessTree):
+            from pm4py.objects.conversion.enhanced_process_tree import converter
+
+            return converter.apply(args[0])
+
         from pm4py.objects.conversion.process_tree.variants import to_petri_net
 
         return to_petri_net.apply(args[0])

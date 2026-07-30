@@ -28,9 +28,9 @@ from pm4py import util as pmutil
 from pm4py.algo.discovery.enhanced_process_tree.variants.log_refinement import LogRefinement
 from pm4py.algo.discovery.enhanced_process_tree.variants.skip_point_post_processor import SkipPointPostProcessor
 from pm4py.algo.discovery.enhanced_process_tree.variants.tree_post_processor import TreePostProcessor
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
+from pm4py.objects.enhanced_process_tree.utils.generic import convert_to_enhanced_process_tree
 from pm4py.objects.log.obj import EventLog
-from pm4py.objects.process_tree.obj import EnhancedProcessTree
-from pm4py.objects.process_tree.utils.enhanced import convert_to_enhanced_tree
 from pm4py.util import constants, exec_utils
 from pm4py.util import xes_constants as xes_util
 from pm4py.util.compression import util as comut
@@ -124,7 +124,7 @@ def apply(
         timestamp_key=tk,
         case_id_key=cidk
     )
-    enhanced_tree = convert_to_enhanced_tree(standard_tree, annotations)
+    enhanced_tree = convert_to_enhanced_process_tree(standard_tree, annotations)
 
     if variant == Variant.REFINEMENT_HYBRID:
         hybrid_processor = SkipPointPostProcessor(parameters=parameters)

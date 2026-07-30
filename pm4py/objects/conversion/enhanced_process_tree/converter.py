@@ -1,0 +1,58 @@
+'''
+PM4Py – A Process Mining Library for Python
+Copyright (C) 2026 Process Intelligence Solutions GmbH
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see this software project's root or
+visit <https://www.gnu.org/licenses/>.
+
+Website: https://processintelligence.solutions
+Contact: info@processintelligence.solutions
+'''
+from enum import Enum
+
+from pm4py.objects.conversion.enhanced_process_tree.variants import to_reset_net
+from pm4py.util import exec_utils
+
+
+class Variants(Enum):
+    TO_RESET_NET = to_reset_net
+
+
+DEFAULT_VARIANT = Variants.TO_RESET_NET
+
+
+def apply(tree, parameters=None, variant=DEFAULT_VARIANT):
+    """
+    Method for converting from an enhanced process tree to a reset net
+
+    Parameters
+    -----------
+    tree
+        Enhanced process tree
+    parameters
+        Parameters of the algorithm
+    variant
+        Chosen variant of the algorithm:
+            - Variants.TO_RESET_NET
+
+    Returns
+    -----------
+    net
+        Reset net
+    initial_marking
+        Initial marking
+    final_marking
+        Final marking
+    """
+    return exec_utils.get_variant(variant).apply(tree, parameters=parameters)

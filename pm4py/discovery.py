@@ -33,13 +33,14 @@ from pandas import DataFrame
 from pm4py.algo.discovery.enhanced_process_tree.algorithm import Variant as EnhancedTreeVariant
 from pm4py.objects.bpmn.obj import BPMN
 from pm4py.objects.dfg.obj import DFG
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
 from pm4py.objects.heuristics_net.obj import HeuristicsNet
 from pm4py.objects.log.obj import EventLog
 from pm4py.objects.log.obj import EventStream
 from pm4py.objects.ocel.obj import OCEL
 from pm4py.objects.petri_net.obj import PetriNet, Marking
 from pm4py.objects.powl.obj import POWL
-from pm4py.objects.process_tree.obj import ProcessTree, EnhancedProcessTree
+from pm4py.objects.process_tree.obj import ProcessTree
 from pm4py.objects.transition_system.obj import TransitionSystem
 from pm4py.objects.trie.obj import Trie
 from pm4py.util import constants

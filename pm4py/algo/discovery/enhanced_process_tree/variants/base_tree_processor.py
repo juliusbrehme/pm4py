@@ -21,7 +21,8 @@ Contact: info@processintelligence.solutions
 '''
 from enum import Enum
 
-from pm4py.objects.process_tree.obj import Operator, EnhancedProcessTree
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
+from pm4py.objects.process_tree.obj import Operator
 from pm4py.util import exec_utils
 
 

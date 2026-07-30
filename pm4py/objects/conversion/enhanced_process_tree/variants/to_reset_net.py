@@ -20,305 +20,89 @@ Website: https://processintelligence.solutions
 Contact: info@processintelligence.solutions
 '''
 import time
-import uuid
+from collections import namedtuple
+from enum import Enum
 
-from pm4py.objects.petri_net.obj import Marking
-from pm4py.objects.petri_net.obj import PetriNet
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
+from pm4py.objects.enhanced_process_tree.utils.generic import is_enhanced
+from pm4py.objects.petri_net.obj import Marking, PetriNet, ResetNet
+from pm4py.objects.petri_net.utils import reduction
 from pm4py.objects.petri_net.utils.petri_utils import (
-    remove_transition,
     add_arc_from_to,
     remove_place,
 )
-from pm4py.objects.process_tree.obj import ProcessTree
 from pm4py.objects.process_tree.obj import Operator
-from pm4py.objects.petri_net.utils import reduction
+from pm4py.util import exec_utils
+
+from pm4py.objects.conversion.process_tree.variants.to_petri_net import (
+    Counts,
+    check_tau_mandatory_at_final_marking,
+    check_tau_mandatory_at_initial_marking,
+    get_new_hidden_trans,
+    get_new_place,
+    get_transition,
+)
 
 
-class Counts(object):
+class Parameters(Enum):
+    APPLY_REDUCTION = "apply_reduction"
+    REMOVE_DANGLING_PLACES = "remove_dangling_places"
+
+
+# A bypass is a silent transition that leaves the normal control flow of a
+# subtree: either straight to the global sink (a 'stop' annotation) or to the
+# final place of the parent (a 'skip' annotation). They are tracked explicitly
+# instead of being recovered from transition names later on.
+Bypass = namedtuple("Bypass", ["transition", "kind", "target"])
+
+
+def add_reset_arc_from_to(fr, to, net, weight=1):
     """
-    Shared variables among executions
-    """
-
-    def __init__(self):
-        """
-        Constructor
-        """
-        self.num_places = 0
-        self.num_hidden = 0
-        self.num_visible_trans = 0
-        self.dict_skips = {}
-        self.dict_loops = {}
-
-    def inc_places(self):
-        """
-        Increase the number of places
-        """
-        self.num_places = self.num_places + 1
-
-    def inc_no_hidden(self):
-        """
-        Increase the number of hidden transitions
-        """
-        self.num_hidden = self.num_hidden + 1
-
-    def inc_no_visible(self):
-        """
-        Increase the number of visible transitions
-        """
-        self.num_visible_trans = self.num_visible_trans + 1
-
-
-def clean_duplicate_transitions(net):
-    """
-    Clean duplicate transitions in a Petri net
+    Adds a reset arc between a place and a transition.
 
     Parameters
     ------------
+    fr
+        Source place
+    to
+        Target transition
     net
-        Petri net
+        Reset net
+    weight
+        Weight of the arc
 
     Returns
     ------------
-    net
-        Cleaned Petri net
+    arc
+        The newly created reset arc
     """
-    transitions = list(net.transitions)
-    already_visited_combo = set()
-    for i in range(0, len(transitions)):
-        trans = transitions[i]
-        if trans.label is None:
-            in_arcs = trans.in_arcs
-            out_arcs = trans.out_arcs
-            to_delete = False
-            for in_arc in in_arcs:
-                in_place = in_arc.source
-                for out_arc in out_arcs:
-                    out_place = out_arc.target
-                    combo = in_place.name + " " + out_place.name
-                    if combo in already_visited_combo:
-                        to_delete = True
-                        break
-                    already_visited_combo.add(combo)
-            if to_delete:
-                net = remove_transition(net, trans)
-    return net
+    arc = ResetNet.ResetArc(fr, to, weight)
+    net.arcs.add(arc)
+    fr.out_arcs.add(arc)
+    to.in_arcs.add(arc)
+    return arc
 
 
-def get_new_place(counts):
+def contains_start(tree):
     """
-    Create a new place in the Petri net
-    """
-    counts.inc_places()
-    return PetriNet.Place("p_" + str(counts.num_places))
-
-
-def get_new_hidden_trans(counts, type_trans="unknown"):
-    """
-    Create a new hidden transition in the Petri net
-    """
-    counts.inc_no_hidden()
-    return PetriNet.Transition(type_trans + "_" + str(counts.num_hidden), None)
-
-
-def get_transition(counts, label):
-    """
-    Create a transitions with the specified label in the Petri net
-    """
-    counts.inc_no_visible()
-    return PetriNet.Transition(str(uuid.uuid4()), label)
-
-
-def get_first_terminal_child_transitions(tree):
-    """
-    Gets the list of transitions belonging to the first terminal child node of the current tree
-
-    Parameters
-    ----------
-    tree
-        Process tree
-
-    Returns
-    ---------
-    transitions_list
-        List of transitions belonging to the first terminal child node
-    """
-    if tree.children:
-        if tree.children[0].operator:
-            return get_first_terminal_child_transitions(tree.children[0])
-        else:
-            if tree.children[0].children:
-                return tree.children[0].children
-            else:
-                return [tree.children[0]]
-    return []
-
-
-def get_last_terminal_child_transitions(tree):
-    """
-    Gets the list of transitions belonging to the last terminal child node of the current tree
-
-    Parameters
-    ----------
-    tree
-        Process tree
-
-    Returns
-    ---------
-    transitions_list
-        List of transitions belonging to the first terminal child node
-    """
-    if tree.children:
-        if tree.children[-1].operator:
-            return get_last_terminal_child_transitions(tree.children[-1])
-        else:
-            if tree.children[-1].children:
-                return tree.children[-1].children
-            else:
-                return [tree.children[-1]]
-    return []
-
-
-def check_loop_to_first_operator(tree):
-    """
-    Checks if loop to first operator
+    Recursively checks whether a subtree contains a node annotated as a start point.
 
     Parameters
     ------------
     tree
-        Process tree
+        Enhanced process tree
 
     Returns
     ------------
     boolean
-        Check if no loop to the first operator
+        True if the subtree contains a start annotation
     """
-    if tree.operator == Operator.LOOP:
+    if tree.start:
         return True
-    if tree.children:
-        if tree.children[0].operator == Operator.LOOP:
+    for child in tree.children:
+        if contains_start(child):
             return True
-        else:
-            return check_loop_to_first_operator(tree.children[0])
-    return tree.operator == Operator.LOOP
-
-
-def check_loop_to_last_operator(tree):
-    """
-    Checks if loop to last operator
-
-    Parameters
-    -------------
-    tree
-        Process tree
-
-    Returns
-    -------------
-    boolean
-        Check if no loop to the last operator
-    """
-    if tree.operator == Operator.LOOP:
-        return True
-    if tree.children:
-        if tree.children[-1].operator == Operator.LOOP:
-            return True
-        else:
-            return check_loop_to_last_operator(tree.children[-1])
-    return tree.operator == Operator.LOOP
-
-
-def check_initial_loop(tree):
-    """
-    Check if the tree, on-the-left, starts with a loop
-
-    Parameters
-    ----------
-    tree
-        Process tree
-
-    Returns
-    ----------
-    boolean
-        True if it starts with an initial loop
-    """
-    if tree.children:
-        if tree.children[0].operator:
-            if tree.children[0].operator == Operator.LOOP:
-                return True
-            else:
-                return check_terminal_loop(tree.children[0])
     return False
-
-
-def check_terminal_loop(tree):
-    """
-    Check if the tree, on-the-right, ends with a loop
-
-    Parameters
-    ----------
-    tree
-        Process tree
-
-    Returns
-    -----------
-    boolean
-        True if it ends with a terminal loop
-    """
-    if tree.children:
-        if tree.children[-1].operator:
-            if tree.children[-1].operator == Operator.LOOP:
-                return True
-            else:
-                return check_terminal_loop(tree.children[-1])
-    return False
-
-
-def check_tau_mandatory_at_initial_marking(tree):
-    """
-    When a conversion to a Petri net is operated, check if is mandatory to add a hidden transition
-    at initial marking
-
-    Parameters
-    ----------
-    tree
-        Process tree
-
-    Returns
-    ----------
-    boolean
-        Boolean that is true if it is mandatory to add a hidden transition connecting the initial marking
-        to the rest of the process
-    """
-    condition1 = check_initial_loop(tree)
-    terminal_transitions = get_first_terminal_child_transitions(tree)
-    condition2 = len(terminal_transitions) > 1
-    condition3 = check_loop_to_first_operator(tree)
-    condition4 = (
-        tree.operator == Operator.XOR or tree.operator == Operator.PARALLEL
-    )
-
-    return condition1 or condition2 or condition3 or condition4
-
-
-def check_tau_mandatory_at_final_marking(tree):
-    """
-    When a conversion to a Petri net is operated, check if is mandatory to add a hidden transition
-    at final marking
-
-    Returns
-    ----------
-    boolean
-        Boolean that is true if it is mandatory to add a hidden transition connecting
-        the rest of the process to the final marking
-    """
-    condition1 = check_terminal_loop(tree)
-    terminal_transitions = get_last_terminal_child_transitions(tree)
-    condition2 = len(terminal_transitions) > 1
-    condition3 = check_loop_to_last_operator(tree)
-    condition4 = (
-        tree.operator == Operator.XOR or tree.operator == Operator.PARALLEL
-    )
-
-    return condition1 or condition2 or condition3 or condition4
 
 
 def recursively_add_tree(
@@ -330,9 +114,13 @@ def recursively_add_tree(
     counts,
     rec_depth,
     force_add_skip=False,
+    global_sink=None,
+    parent_final_place=None,
+    global_source=None,
+    bypasses=None,
 ):
     """
-    Recursively add the subtrees to the Petri net
+    Recursively adds the subtrees to the reset net
 
     Parameters
     -----------
@@ -341,7 +129,7 @@ def recursively_add_tree(
     tree
         Current subtree
     net
-        Petri net
+        Reset net
     initial_entity_subtree
         Initial entity (place/transition) that should be attached from the subtree
     final_entity_subtree
@@ -352,22 +140,42 @@ def recursively_add_tree(
         Recursion depth of the current iteration
     force_add_skip
         Boolean value that tells if the addition of a skip is mandatory
+    global_sink
+        The end place of the whole reset net
+    parent_final_place
+        The end place of the parent
+    global_source
+        The start place of the whole reset net
+    bypasses
+        Accumulator collecting every bypass transition created during the recursion
 
     Returns
     ----------
     net
-        Updated Petri net
+        Updated reset net
     counts
-        Updated counts object (keeps the number of places, transitions and hidden transitions)
+        Updated counts object
     final_place
         Last place added in this recursion
     """
+    if bypasses is None:
+        bypasses = []
+
     if type(initial_entity_subtree) is PetriNet.Transition:
         initial_place = get_new_place(counts)
         net.places.add(initial_place)
         add_arc_from_to(initial_entity_subtree, initial_place, net)
     else:
         initial_place = initial_entity_subtree
+
+    if tree.start and global_source is not None and initial_place != global_source:
+        tau_start = get_new_hidden_trans(counts, type_trans="tau_start")
+        net.transitions.add(tau_start)
+
+        # Connect: global source -> tau_start -> local initial place
+        add_arc_from_to(global_source, tau_start, net)
+        add_arc_from_to(tau_start, initial_place, net)
+
     if (
         final_entity_subtree is not None
         and type(final_entity_subtree) is PetriNet.Place
@@ -381,6 +189,7 @@ def recursively_add_tree(
             and type(final_entity_subtree) is PetriNet.Transition
         ):
             add_arc_from_to(final_place, final_entity_subtree, net)
+
     tree_childs = [child for child in tree.children]
 
     if force_add_skip:
@@ -400,15 +209,54 @@ def recursively_add_tree(
 
     if tree.operator == Operator.XOR:
         for subtree in tree_childs:
+            if subtree.start and global_source is not None:
+                # Isolate the branch entry so the start bypass cannot be taken
+                # by the other branches of the choice.
+                isolated_start_place = get_new_place(counts)
+                net.places.add(isolated_start_place)
+
+                tau_enter = get_new_hidden_trans(
+                    counts, type_trans="tau_xor_enter"
+                )
+                net.transitions.add(tau_enter)
+                add_arc_from_to(initial_place, tau_enter, net)
+                add_arc_from_to(tau_enter, isolated_start_place, net)
+
+                target_initial_place = isolated_start_place
+            else:
+                target_initial_place = initial_place
+
+            if subtree.stop and global_sink is not None:
+                # Isolate the branch exit, then rejoin the shared XOR end place
+                # through a silent transition.
+                isolated_place = get_new_place(counts)
+                net.places.add(isolated_place)
+
+                tau_continue = get_new_hidden_trans(
+                    counts, type_trans="tau_xor_continue"
+                )
+                net.transitions.add(tau_continue)
+                add_arc_from_to(isolated_place, tau_continue, net)
+                add_arc_from_to(tau_continue, final_place, net)
+
+                target_final_place = isolated_place
+            else:
+                target_final_place = final_place
+
             net, counts, intermediate_place = recursively_add_tree(
                 tree,
                 subtree,
                 net,
-                initial_place,
-                final_place,
+                target_initial_place,
+                target_final_place,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
+
     elif tree.operator == Operator.OR:
         new_initial_trans = get_new_hidden_trans(counts, type_trans="tauSplit")
         net.transitions.add(new_initial_trans)
@@ -468,6 +316,10 @@ def recursively_add_tree(
                 subtree_end_place,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
 
     elif tree.operator == Operator.PARALLEL:
@@ -478,16 +330,77 @@ def recursively_add_tree(
         net.transitions.add(new_final_trans)
         add_arc_from_to(new_final_trans, final_place, net)
 
+        places_before = set(net.places)
+        bypasses_before = len(bypasses)
+
+        has_internal_start = any(contains_start(child) for child in tree_childs)
+
+        if has_internal_start and global_source is not None:
+            # The AND block intercepts the start signal, so that starting
+            # inside one branch still enables all the other branches.
+            tau_start_split = get_new_hidden_trans(
+                counts, type_trans="tau_start_split"
+            )
+            net.transitions.add(tau_start_split)
+            add_arc_from_to(global_source, tau_start_split, net)
+
         for subtree in tree_childs:
+            # Explicitly create the normal starting place for this branch
+            subtree_init_place = get_new_place(counts)
+            net.places.add(subtree_init_place)
+            add_arc_from_to(new_initial_trans, subtree_init_place, net)
+
+            branch_global_source = global_source
+
+            if has_internal_start and global_source is not None:
+                if contains_start(subtree):
+                    # This branch holds the start node: pass a synced source down
+                    branch_sync_source = get_new_place(counts)
+                    net.places.add(branch_sync_source)
+                    add_arc_from_to(tau_start_split, branch_sync_source, net)
+                    branch_global_source = branch_sync_source
+                else:
+                    # This branch does not hold the start node: it starts normally.
+                    add_arc_from_to(tau_start_split, subtree_init_place, net)
+                    # Sever the source so it does not build a false bypass inside itself
+                    branch_global_source = None
+
             net, counts, intermediate_place = recursively_add_tree(
                 tree,
                 subtree,
                 net,
-                new_initial_trans,
+                subtree_init_place,
                 new_final_trans,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=branch_global_source,
+                bypasses=bypasses,
             )
+
+        and_places = set(net.places) - places_before
+        new_bypasses = bypasses[bypasses_before:]
+
+        # Leaving an AND block through a bypass must clear the tokens that are
+        # still sitting in the concurrent branches, otherwise the net would keep
+        # firing them after the process has already left the block.
+        for bypass in new_bypasses:
+            if bypass.kind == "stop":
+                is_valid_bypass = True
+            elif bypass.kind == "skip":
+                is_valid_bypass = bypass.target is final_place
+            else:
+                is_valid_bypass = False
+
+            if not is_valid_bypass:
+                continue
+
+            regular_inputs = {arc.source for arc in bypass.transition.in_arcs}
+            for p in and_places:
+                # No reset arc if the place is already a regular input of the bypass
+                if p not in regular_inputs:
+                    add_reset_arc_from_to(p, bypass.transition, net)
 
     elif tree.operator == Operator.INTERLEAVING:
         new_initial_trans = get_new_hidden_trans(counts, type_trans="tauSplit")
@@ -522,7 +435,17 @@ def recursively_add_tree(
             add_arc_from_to(fTrans, control_place, net)
 
             net, counts, intermediate_place = recursively_add_tree(
-                tree, subtree, net, iTrans, fTrans, counts, rec_depth + 1
+                tree,
+                subtree,
+                net,
+                iTrans,
+                fTrans,
+                counts,
+                rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
 
     elif tree.operator == Operator.SEQUENCE:
@@ -539,9 +462,13 @@ def recursively_add_tree(
                 final_connection_place,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
+
     elif tree.operator == Operator.LOOP:
-        # if not parent_tree.operator == Operator.SEQUENCE:
         new_initial_place = get_new_place(counts)
         net.places.add(new_initial_place)
         init_loop_trans = get_new_hidden_trans(counts, type_trans="init_loop")
@@ -560,6 +487,10 @@ def recursively_add_tree(
                 final_place,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
             add_arc_from_to(final_place, loop_trans, net)
             add_arc_from_to(loop_trans, initial_place, net)
@@ -572,27 +503,58 @@ def recursively_add_tree(
                 None,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
             int2 = None
             for i in range(1, len(tree_childs)):
+                child = tree_childs[i]
+                if child.start and global_source is not None:
+                    isolated_loop_start = get_new_place(counts)
+                    net.places.add(isolated_loop_start)
+
+                    tau_loop_enter = get_new_hidden_trans(
+                        counts, type_trans="tau_loop_enter"
+                    )
+                    net.transitions.add(tau_loop_enter)
+                    add_arc_from_to(int1, tau_loop_enter, net)
+                    add_arc_from_to(tau_loop_enter, isolated_loop_start, net)
+
+                    target_initial_place = isolated_loop_start
+                else:
+                    target_initial_place = int1
+
                 net, counts, int2 = recursively_add_tree(
                     tree,
                     tree_childs[i],
                     net,
-                    int1,
+                    target_initial_place,
                     int2,
                     counts,
                     rec_depth + 1,
+                    global_sink=global_sink,
+                    parent_final_place=final_place,
+                    global_source=global_source,
+                    bypasses=bypasses,
                 )
 
+            # NOTE: EnhancedProcessTree(), not ProcessTree() -- the recursion
+            # reads .start/.stop/.skip directly, so the silent exit leaf has to
+            # carry those attributes too.
             net, counts, int3 = recursively_add_tree(
                 tree,
-                ProcessTree(),
+                EnhancedProcessTree(),
                 net,
                 int1,
                 final_place,
                 counts,
                 rec_depth + 1,
+                global_sink=global_sink,
+                parent_final_place=final_place,
+                global_source=global_source,
+                bypasses=bypasses,
             )
 
             looping_place = int2
@@ -600,24 +562,54 @@ def recursively_add_tree(
             add_arc_from_to(looping_place, loop_trans, net)
             add_arc_from_to(loop_trans, initial_place, net)
 
+    # A stop annotation creates a bypass straight to the global sink
+    if tree.stop and global_sink is not None and final_place != global_sink:
+        tau_stop = get_new_hidden_trans(counts, type_trans="tau_stop")
+        net.transitions.add(tau_stop)
+
+        add_arc_from_to(final_place, tau_stop, net)
+        add_arc_from_to(tau_stop, global_sink, net)
+
+        bypasses.append(Bypass(tau_stop, "stop", global_sink))
+
+    # A skip annotation creates a bypass to the final place of the parent
+    elif (
+        tree.skip
+        and parent_final_place is not None
+        and final_place != parent_final_place
+    ):
+        tau_skip = get_new_hidden_trans(counts, type_trans="tau_skip")
+        net.transitions.add(tau_skip)
+
+        add_arc_from_to(final_place, tau_skip, net)
+        add_arc_from_to(tau_skip, parent_final_place, net)
+
+        bypasses.append(Bypass(tau_skip, "skip", parent_final_place))
+
     return net, counts, final_place
 
 
 def apply(tree, parameters=None):
     """
-    Apply from Process Tree to Petri net
+    Applies the conversion from an enhanced process tree to a reset net
 
     Parameters
     -----------
     tree
-        Process tree
+        Enhanced process tree
     parameters
-        Parameters of the algorithm
+        Parameters of the algorithm:
+            - Parameters.APPLY_REDUCTION: whether the simple Petri net reduction
+              should be applied afterwards (default: True). The reduction is not
+              aware of reset arcs, so disable it if the resulting net contains
+              reset arcs whose semantics must be preserved exactly.
+            - Parameters.REMOVE_DANGLING_PLACES: whether places without incoming
+              or outgoing arcs should be removed (default: True)
 
     Returns
     -----------
     net
-        Petri net
+        Reset net
     initial_marking
         Initial marking
     final_marking
@@ -625,10 +617,25 @@ def apply(tree, parameters=None):
     """
     if parameters is None:
         parameters = {}
-    del parameters
+
+    if not is_enhanced(tree):
+        raise TypeError(
+            "the conversion to a reset net requires an EnhancedProcessTree "
+            "in which every node is an EnhancedProcessTree; got a tree rooted "
+            "in %s. Use pm4py.objects.enhanced_process_tree.utils.generic."
+            "from_process_tree to convert a plain process tree."
+            % type(tree).__name__
+        )
+
+    apply_reduction = exec_utils.get_param_value(
+        Parameters.APPLY_REDUCTION, parameters, True
+    )
+    remove_dangling_places = exec_utils.get_param_value(
+        Parameters.REMOVE_DANGLING_PLACES, parameters, True
+    )
 
     counts = Counts()
-    net = PetriNet("imdf_net_" + str(time.time()))
+    net = ResetNet("enhanced_pt_net_" + str(time.time()))
     initial_marking = Marking()
     final_marking = Marking()
     source = get_new_place(counts)
@@ -639,8 +646,10 @@ def apply(tree, parameters=None):
     net.places.add(sink)
     initial_marking[source] = 1
     final_marking[sink] = 1
+
     initial_mandatory = check_tau_mandatory_at_initial_marking(tree)
     final_mandatory = check_tau_mandatory_at_final_marking(tree)
+
     if initial_mandatory:
         initial_place = get_new_place(counts)
         net.places.add(initial_place)
@@ -650,6 +659,7 @@ def apply(tree, parameters=None):
         add_arc_from_to(tau_initial, initial_place, net)
     else:
         initial_place = source
+
     if final_mandatory:
         final_place = get_new_place(counts)
         net.places.add(final_place)
@@ -661,16 +671,28 @@ def apply(tree, parameters=None):
         final_place = sink
 
     net, counts, last_added_place = recursively_add_tree(
-        tree, tree, net, initial_place, final_place, counts, 0
+        tree,
+        tree,
+        net,
+        initial_place,
+        final_place,
+        counts,
+        0,
+        global_sink=sink,
+        parent_final_place=final_place,
+        global_source=source,
+        bypasses=[],
     )
 
-    reduction.apply_simple_reduction(net)
+    if apply_reduction:
+        reduction.apply_simple_reduction(net)
 
-    places = list(net.places)
-    for place in places:
-        if len(place.out_arcs) == 0 and place not in final_marking:
-            remove_place(net, place)
-        if len(place.in_arcs) == 0 and place not in initial_marking:
-            remove_place(net, place)
+    if remove_dangling_places:
+        places = list(net.places)
+        for place in places:
+            if len(place.out_arcs) == 0 and place not in final_marking:
+                remove_place(net, place)
+            if len(place.in_arcs) == 0 and place not in initial_marking:
+                remove_place(net, place)
 
     return net, initial_marking, final_marking

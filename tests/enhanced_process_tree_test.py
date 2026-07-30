@@ -2,8 +2,9 @@ import unittest
 import pandas as pd
 from pm4py.algo.discovery.enhanced_process_tree import algorithm as log_refinement_discovery
 from pm4py.objects.conversion.process_tree.variants import to_petri_net
+from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
 from pm4py.objects.petri_net.obj import ResetNet
-from pm4py.objects.process_tree.obj import EnhancedProcessTree, Operator
+from pm4py.objects.process_tree.obj import Operator
 
 
 class EnhancedProcessTreeTest(unittest.TestCase):
