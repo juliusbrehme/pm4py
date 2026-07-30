@@ -39,6 +39,7 @@ if pm4_constants.ENABLE_INTERNAL_IMPORTS:
         ocel,
         performance_spectrum,
         powl,
+        split_miner,
         temporal_profile,
-        transition_system
+        transition_system,
     )

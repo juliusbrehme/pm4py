@@ -59,6 +59,8 @@ class Parameters(Enum):
     ADD_CASE_IDENTIFIER_COLUMN = "add_case_identifier_column"
     DETERMINISTIC = "deterministic"
     COUNT_OCCURRENCES = "count_occurrences"
+    ENABLE_NUMERIC_ATTRIBUTE_STATISTICS = "enable_numeric_attribute_statistics"
+    NUMERIC_ATTRIBUTE_AGGREGATIONS = "numeric_attribute_aggregations"
 
 
 from pm4py.objects.log.util.df_features_utils import *  # noqa: F401,F403

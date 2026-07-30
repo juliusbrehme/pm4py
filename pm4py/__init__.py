@@ -19,8 +19,70 @@ visit <https://www.gnu.org/licenses/>.
 Website: https://processintelligence.solutions
 Contact: info@processintelligence.solutions
 '''
+import sys
 import time
 
+
+def _pm4py_is_direct_import_from_entrypoint():
+    importlib_module_names = {
+        "_frozen_importlib",
+        "_frozen_importlib_external",
+        "importlib",
+        "importlib._bootstrap",
+        "importlib._bootstrap_external",
+    }
+    getframe = getattr(sys, "_getframe", None)
+    if getframe is None:
+        return False
+    frame = getframe(1)
+    while frame is not None:
+        module_name = frame.f_globals.get("__name__")
+        if module_name == __name__ or module_name in importlib_module_names:
+            frame = frame.f_back
+            continue
+        return module_name == "__main__"
+    return False
+
+
+def _print_welcome():
+    yellow = "\033[93m"
+    cyan = "\033[96m"
+    reset = "\033[0m"
+
+    lines = [
+        "",
+        f"{yellow}{'=' * 60}{reset}",
+        "",
+        f"  Welcome to {cyan}PM4Py{reset} — Community Version",
+        "  Open-Source License (AGPL v3)",
+        "",
+        "  📚 Docs & Examples:",
+        "     https://processintelligence.solutions/pm4py",
+        "",
+        f"  ⚖️  {yellow}License: AGPL v3 — Commercial use requires open-sourcing your application.{reset}",
+        "     Business use without open-sourcing? A commercial license is available:",
+        "     https://processintelligence.solutions/pm4py#licensing",
+        "",
+        f"{yellow}{'=' * 60}{reset}",
+        "",
+    ]
+    print("\n".join(lines), file=sys.stderr)
+
+
+if not hasattr(sys, "_pm4py_welcome_shown") and _pm4py_is_direct_import_from_entrypoint():
+    _print_welcome()
+    sys._pm4py_welcome_shown = True
+
+
+from pm4py import (
+    util,
+    objects,
+    statistics,
+    algo,
+    visualization,
+    llm,
+    connectors,
+)
 from pm4py import (
     analysis,
     conformance,
@@ -38,105 +100,54 @@ from pm4py import (
     vis,
     write,
 )
-from pm4py import (
-    util,
-    objects,
-    statistics,
-    algo,
-    visualization,
-    llm,
-    connectors,
+from pm4py.read import (
+    read_xes,
+    read_dfg,
+    read_bpmn,
+    read_pnml,
+    read_ptml,
+    read_ocel,
+    read_ocel_csv,
+    read_ocel_xml,
+    read_ocel_json,
+    read_ocel_sqlite,
+    read_ocel2,
+    read_ocel2_bundle,
+    read_ocel2_csv,
+    read_ocel2_sqlite,
+    read_ocel2_json,
+    read_ocel2_xml,
 )
-from pm4py.algo.discovery.enhanced_process_tree.algorithm import Variant as EnhancedTreeVariant
-from pm4py.analysis import (
-    cluster_log,
-    check_soundness,
-    compute_emd,
-    solve_marking_equation,
-    solve_extended_marking_equation,
-    construct_synchronous_product_net,
-    insert_artificial_start_end,
-    check_is_workflow_net,
-    maximal_decomposition,
-    generate_marking,
-    reduce_petri_net_invisibles,
-    reduce_petri_net_implicit_places,
-    insert_case_arrival_finish_rate,
-    insert_case_service_waiting_time,
-    get_enabled_transitions,
-    simplicity_petri_net,
-    behavioral_similarity,
-    structural_similarity,
-    embeddings_similarity,
-    get_activity_labels,
-    replace_activity_labels,
-    label_sets_similarity,
-    map_labels_from_second_model
+from pm4py.write import (
+    write_xes,
+    write_dfg,
+    write_bpmn,
+    write_pnml,
+    write_ptml,
+    write_ocel,
+    write_ocel_json,
+    write_ocel_csv,
+    write_ocel_xml,
+    write_ocel_sqlite,
+    write_ocel2,
+    write_ocel2_bundle,
+    write_ocel2_csv,
+    write_ocel2_sqlite,
+    write_ocel2_xml,
+    write_ocel2_json,
 )
-from pm4py.conformance import (
-    conformance_diagnostics_token_based_replay,
-    conformance_diagnostics_alignments,
-    fitness_token_based_replay,
-    fitness_alignments,
-    precision_token_based_replay,
-    precision_alignments,
-    conformance_diagnostics_footprints,
-    fitness_footprints,
-    precision_footprints,
-    check_is_fitting,
-    conformance_temporal_profile,
-    conformance_declare,
-    conformance_log_skeleton,
-    conformance_ocdfg,
-    conformance_otg,
-    conformance_etot,
-    replay_prefix_tbr,
-    generalization_tbr,
-)
-from pm4py.convert import (
-    convert_to_event_log,
-    convert_to_event_stream,
-    convert_to_dataframe,
-    convert_to_bpmn,
-    convert_to_petri_net,
-    convert_to_process_tree,
-    convert_to_reachability_graph,
-    convert_log_to_ocel,
-    convert_ocel_to_networkx,
-    convert_log_to_networkx,
-    convert_log_to_time_intervals,
-    convert_petri_net_to_networkx,
-    convert_petri_net_type,
-    convert_to_powl,
-)
-from pm4py.discovery import (
-    discover_petri_net_alpha,
-    discover_petri_net_alpha_plus,
-    discover_petri_net_ilp,
-    discover_petri_net_heuristics,
-    discover_petri_net_inductive,
-    discover_petri_net_genetic,
-    discover_process_tree_inductive,
-    discover_enhanced_process_tree,
-    discover_heuristics_net,
-    discover_dfg,
-    discover_footprints,
-    discover_eventually_follows_graph,
-    discover_directly_follows_graph,
-    discover_bpmn_inductive,
-    discover_performance_dfg,
-    discover_transition_system,
-    discover_prefix_tree,
-    discover_temporal_profile,
-    discover_log_skeleton,
-    discover_batches,
-    derive_minimum_self_distance,
-    discover_dfg_typed,
-    discover_declare,
-    discover_powl,
-    correlation_miner,
-    discover_otg,
-    discover_etot,
+from pm4py.utils import (
+    format_dataframe,
+    parse_process_tree,
+    serialize,
+    deserialize,
+    set_classifier,
+    parse_event_log_string,
+    project_on_event_attribute,
+    sample_cases,
+    sample_events,
+    rebase,
+    parse_powl_model_string,
 )
 from pm4py.filtering import (
     filter_log_relative_occurrence_event_attribute,
@@ -178,19 +189,55 @@ from pm4py.filtering import (
     filter_dfg_activities_percentage,
     filter_dfg_paths_percentage
 )
-from pm4py.ml import (
-    split_train_test,
-    get_prefixes_from_log,
-    extract_ocel_features,
-    extract_features_dataframe,
-    extract_temporal_features_dataframe,
-    extract_outcome_enriched_dataframe,
-    extract_target_vector,
+from pm4py.discovery import (
+    discover_petri_net_alpha,
+    discover_petri_net_alpha_plus,
+    discover_petri_net_ilp,
+    discover_petri_net_heuristics,
+    discover_petri_net_inductive,
+    discover_petri_net_genetic,
+    discover_process_tree_inductive,
+    discover_heuristics_net,
+    discover_dfg,
+    discover_footprints,
+    discover_eventually_follows_graph,
+    discover_directly_follows_graph,
+    discover_bpmn_inductive,
+    discover_bpmn_split_miner,
+    discover_performance_dfg,
+    discover_transition_system,
+    discover_prefix_tree,
+    discover_temporal_profile,
+    discover_log_skeleton,
+    discover_batches,
+    derive_minimum_self_distance,
+    discover_dfg_typed,
+    discover_declare,
+    discover_powl,
+    correlation_miner,
+    discover_otg,
+    discover_etot,
 )
-from pm4py.objects.bpmn.obj import BPMN
-from pm4py.objects.ocel.obj import OCEL
-from pm4py.objects.petri_net.obj import PetriNet, Marking
-from pm4py.objects.process_tree.obj import ProcessTree
+from pm4py.conformance import (
+    conformance_diagnostics_token_based_replay,
+    conformance_diagnostics_alignments,
+    fitness_token_based_replay,
+    fitness_alignments,
+    precision_token_based_replay,
+    precision_alignments,
+    conformance_diagnostics_footprints,
+    fitness_footprints,
+    precision_footprints,
+    check_is_fitting,
+    conformance_temporal_profile,
+    conformance_declare,
+    conformance_log_skeleton,
+    conformance_ocdfg,
+    conformance_otg,
+    conformance_etot,
+    replay_prefix_tbr,
+    generalization_tbr,
+)
 from pm4py.ocel import (
     ocel_objects_interactions_summary,
     ocel_temporal_summary,
@@ -216,70 +263,6 @@ from pm4py.ocel import (
     ocel_roll_up,
     ocel_unfold,
     ocel_fold,
-)
-from pm4py.org import (
-    discover_handover_of_work_network,
-    discover_activity_based_resource_similarity,
-    discover_subcontracting_network,
-    discover_working_together_network,
-    discover_organizational_roles,
-    discover_network_analysis,
-)
-from pm4py.read import (
-    read_xes,
-    read_dfg,
-    read_bpmn,
-    read_pnml,
-    read_ptml,
-    read_ocel,
-    read_ocel_csv,
-    read_ocel_xml,
-    read_ocel_json,
-    read_ocel_sqlite,
-    read_ocel2,
-    read_ocel2_sqlite,
-    read_ocel2_json,
-    read_ocel2_xml,
-)
-from pm4py.sim import play_out, generate_process_tree
-from pm4py.stats import (
-    get_start_activities,
-    get_process_cube,
-    get_end_activities,
-    get_event_attributes,
-    get_event_attribute_values,
-    get_variants,
-    get_trace_attributes,
-    get_variants_as_tuples,
-    get_trace_attribute_values,
-    get_case_arrival_average,
-    get_minimum_self_distances,
-    get_minimum_self_distance_witnesses,
-    get_frequent_trace_segments,
-    get_case_arrival_average,
-    get_rework_cases_per_activity,
-    get_case_overlap,
-    get_cycle_time,
-    get_all_case_durations,
-    get_case_duration,
-    get_activity_position_summary,
-    get_stochastic_language,
-    split_by_process_variant,
-    get_variants_paths_duration,
-    get_service_time
-)
-from pm4py.utils import (
-    format_dataframe,
-    parse_process_tree,
-    serialize,
-    deserialize,
-    set_classifier,
-    parse_event_log_string,
-    project_on_event_attribute,
-    sample_cases,
-    sample_events,
-    rebase,
-    parse_powl_model_string,
 )
 from pm4py.vis import (
     view_petri_net,
@@ -325,23 +308,106 @@ from pm4py.vis import (
     view_powl,
     save_vis_powl,
 )
-from pm4py.write import (
-    write_xes,
-    write_dfg,
-    write_bpmn,
-    write_pnml,
-    write_ptml,
-    write_ocel,
-    write_ocel_json,
-    write_ocel_csv,
-    write_ocel_xml,
-    write_ocel_sqlite,
-    write_ocel2,
-    write_ocel2_sqlite,
-    write_ocel2_xml,
-    write_ocel2_json,
+from pm4py.convert import (
+    convert_to_event_log,
+    convert_to_event_stream,
+    convert_to_dataframe,
+    convert_to_bpmn,
+    convert_to_petri_net,
+    convert_to_process_tree,
+    convert_to_reachability_graph,
+    convert_log_to_ocel,
+    convert_ocel_to_networkx,
+    convert_log_to_networkx,
+    convert_log_to_time_intervals,
+    convert_petri_net_to_networkx,
+    convert_petri_net_type,
+    convert_to_powl,
+)
+from pm4py.analysis import (
+    cluster_log,
+    check_soundness,
+    compute_emd,
+    solve_marking_equation,
+    solve_extended_marking_equation,
+    construct_synchronous_product_net,
+    insert_artificial_start_end,
+    check_is_workflow_net,
+    maximal_decomposition,
+    generate_marking,
+    reduce_petri_net_invisibles,
+    reduce_petri_net_implicit_places,
+    insert_case_arrival_finish_rate,
+    insert_case_service_waiting_time,
+    get_enabled_transitions,
+    simplicity_petri_net,
+    behavioral_similarity,
+    structural_similarity,
+    embeddings_similarity,
+    get_activity_labels,
+    replace_activity_labels,
+    label_sets_similarity,
+    map_labels_from_second_model
+)
+from pm4py.stats import (
+    get_start_activities,
+    get_process_cube,
+    get_end_activities,
+    get_event_attributes,
+    get_event_attribute_values,
+    get_variants,
+    get_trace_attributes,
+    get_variants_as_tuples,
+    get_trace_attribute_values,
+    get_case_arrival_average,
+    get_minimum_self_distances,
+    get_minimum_self_distance_witnesses,
+    get_frequent_trace_segments,
+    get_case_arrival_average,
+    get_rework_cases_per_activity,
+    get_case_overlap,
+    get_cycle_time,
+    get_all_case_durations,
+    get_case_duration,
+    get_activity_position_summary,
+    get_stochastic_language,
+    split_by_process_variant,
+    get_variants_paths_duration,
+    get_service_time
+)
+from pm4py.sim import play_out, generate_process_tree
+from pm4py.ml import (
+    split_train_test,
+    get_prefixes_from_log,
+    extract_ocel_features,
+    extract_features_dataframe,
+    extract_temporal_features_dataframe,
+    extract_outcome_enriched_dataframe,
+    extract_target_vector,
+)
+from pm4py.org import (
+    discover_handover_of_work_network,
+    discover_activity_based_resource_similarity,
+    discover_subcontracting_network,
+    discover_working_together_network,
+    discover_organizational_roles,
+    discover_network_analysis,
 )
 
 # from pm4py.hof import filter_log, filter_trace, sort_trace, sort_log
+from pm4py.meta import (
+    __name__,
+    __version__,
+    __doc__,
+    __author__,
+    __author_email__,
+    __maintainer__,
+    __maintainer_email__,
+)
+
+from pm4py.objects.petri_net.obj import PetriNet, Marking
+from pm4py.objects.process_tree.obj import ProcessTree
+from pm4py.objects.ocel.obj import OCEL
+from pm4py.objects.bpmn.obj import BPMN
 
 time.clock = time.process_time

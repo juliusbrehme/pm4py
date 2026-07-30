@@ -43,6 +43,15 @@ The `pm4py.read` module contains all functionality related to reading files and 
 """
 
 
+def _matches_extension(file_path: str, extensions: Tuple[str, ...]) -> bool:
+    file_path = str(file_path).lower()
+    return any(
+        file_path.endswith(extension)
+        or file_path.endswith(extension + ".gz")
+        for extension in extensions
+    )
+
+
 def _resolve_path(file_path: str) -> str:
     """
     Resolve a file path which can be either:
@@ -430,9 +439,11 @@ def read_ocel2(
     :rtype: `OCEL`
 
     Supported file formats based on extension:
+        - `.ocel.zip` – bundled CSV/Parquet archive,
         - `.sqlite` – SQLite database,
-        - `.xml` or `.xmlocel` – XML file,
-        - `.json` or `.jsonocel` – JSON file.
+        - `.csv` – compact OCEL 2.0 CSV file,
+        - `.xml`, `.xmlocel`, `.xml.gz`, or `.xmlocel.gz` – XML file,
+        - `.json`, `.jsonocel`, `.json.gz`, or `.jsonocel.gz` – JSON file.
 
     .. code-block:: python3
 
@@ -441,24 +452,89 @@ def read_ocel2(
         ocel = pm4py.read_ocel2("<path_or_uri_to_ocel_file>")
     """
     local_path = _resolve_path(file_path)
+    extension_path = str(file_path)
 
-    if local_path.lower().endswith("sqlite"):
+    if (
+        extension_path.lower().endswith(".ocel.zip")
+        or local_path.lower().endswith(".ocel.zip")
+        or (
+            os.path.isdir(local_path)
+            and os.path.exists(os.path.join(local_path, "ocel-meta.json"))
+        )
+    ):
+        return read_ocel2_bundle(local_path, encoding=encoding)
+    if extension_path.lower().endswith("sqlite") or local_path.lower().endswith(
+        "sqlite"
+    ):
         return read_ocel2_sqlite(
             local_path, variant_str=variant_str, encoding=encoding
         )
-    elif local_path.lower().endswith("xml") or local_path.lower().endswith(
-        "xmlocel"
+    elif extension_path.lower().endswith("csv") or local_path.lower().endswith("csv"):
+        return read_ocel2_csv(local_path, encoding=encoding)
+    elif _matches_extension(extension_path, ("xml", "xmlocel")) or _matches_extension(
+        local_path, ("xml", "xmlocel")
     ):
         return read_ocel2_xml(
             local_path, encoding=encoding
         )
-    elif local_path.lower().endswith("json") or local_path.lower().endswith(
-        "jsonocel"
+    elif _matches_extension(extension_path, ("json", "jsonocel")) or _matches_extension(
+        local_path, ("json", "jsonocel")
     ):
         return read_ocel2_json(
             local_path, encoding=encoding
         )
     raise Exception("Unsupported file format for OCEL 2.0")
+
+
+def read_ocel2_bundle(
+    file_path: str,
+    encoding: str = constants.DEFAULT_ENCODING,
+) -> OCEL:
+    """
+    Reads an OCEL 2.0 event log from the bundled CSV/Parquet format.
+
+    The input can be a ``.ocel.zip`` archive or an uncompressed bundle directory
+    containing ``ocel-meta.json``.
+
+    :param file_path: Path/URI to the bundled OCEL 2.0 archive or directory.
+    :param encoding: Encoding to be used for metadata and CSV files (default: `utf-8`).
+    :rtype: `OCEL`
+
+    .. code-block:: python3
+
+        import pm4py
+
+        ocel = pm4py.read_ocel2_bundle("<path_to_bundle.ocel.zip>")
+    """
+    from pm4py.objects.ocel.importer.bundled import importer as bundled_importer
+
+    return bundled_importer.apply(file_path, parameters={"encoding": encoding})
+
+
+def read_ocel2_csv(
+    file_path: str,
+    encoding: str = constants.DEFAULT_ENCODING,
+) -> OCEL:
+    """
+    Reads an OCEL 2.0 event log from a compact CSV file.
+
+    :param file_path: Path/URI to the OCEL 2.0 CSV file (`.csv`).
+    :param encoding: Encoding to be used (default: `utf-8`).
+    :rtype: `OCEL`
+
+    .. code-block:: python3
+
+        import pm4py
+
+        ocel = pm4py.read_ocel2_csv("<path_or_uri_to_ocel_file.csv>")
+    """
+    from pm4py.objects.ocel.importer.csv import importer as csv_importer
+
+    return csv_importer.apply(
+        file_path,
+        variant=csv_importer.Variants.OCEL20,
+        parameters={"encoding": encoding},
+    )
 
 
 def read_ocel2_json(
@@ -468,7 +544,7 @@ def read_ocel2_json(
     """
     Reads an OCEL 2.0 event log from a JSON-OCEL2 file.
 
-    :param file_path: Path/URI to the JSON file (`.jsonocel`).
+    :param file_path: Path/URI to the JSON file (`.json`, `.jsonocel`, or their `.gz` variants).
     :param encoding: Encoding to be used (default: `utf-8`).
     :rtype: `OCEL`
 
@@ -524,7 +600,7 @@ def read_ocel2_xml(
     """
     Reads an OCEL 2.0 event log from an XML file.
 
-    :param file_path: Path/URI to the OCEL 2.0 XML file (`.xmlocel`).
+    :param file_path: Path/URI to the OCEL 2.0 XML file (`.xml`, `.xmlocel`, or their `.gz` variants).
     :param encoding: Encoding to be used (default: `utf-8`).
     :rtype: `OCEL`
 

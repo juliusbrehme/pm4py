@@ -6,12 +6,21 @@ from pm4py.algo.discovery.alpha import algorithm as alpha_alg
 from pm4py.algo.discovery.inductive import algorithm as inductive_miner
 from pm4py.objects import petri_net
 from pm4py.objects.log.importer.xes import importer as xes_importer
+from pm4py.objects.process_tree.obj import Operator as ProcessTreeOperator, ProcessTree
 from tests.constants import INPUT_DATA_DIR
 from pm4py.objects.conversion.process_tree import converter as process_tree_converter
 from config import test_config
 
 
 class AlignmentTest(unittest.TestCase):
+    @staticmethod
+    def _loop_tree(*children):
+        tree = ProcessTree(operator=ProcessTreeOperator.LOOP)
+        tree.children = list(children)
+        for child in children:
+            child.parent = tree
+        return tree
+
     def test_alignment_alpha(self):
         # to avoid static method warnings in tests,
         # that by construction of the unittest package have to be expressed in such way
@@ -89,6 +98,23 @@ class AlignmentTest(unittest.TestCase):
         from pm4py.algo.conformance.alignments.process_tree.variants import dynamic_programming
         al = dynamic_programming.apply(log, tree)
 
+    def test_dynamic_tree_align_loop_starts_with_do_branch(self):
+        from pm4py.algo.conformance.alignments.process_tree.variants import dynamic_programming
+
+        tree = self._loop_tree(ProcessTree(label="A"), ProcessTree(label="B"))
+
+        self.assertEqual(0, dynamic_programming.align_trace_with_process_tree(("A",), tree)[0])
+        self.assertEqual(0, dynamic_programming.align_trace_with_process_tree(("A", "B", "A"), tree)[0])
+        self.assertEqual(1, dynamic_programming.align_trace_with_process_tree(tuple(), tree)[0])
+        self.assertEqual(1, dynamic_programming.align_trace_with_process_tree(("B", "A"), tree)[0])
+
+    def test_dynamic_tree_align_loop_allows_empty_redo_alignment(self):
+        from pm4py.algo.conformance.alignments.process_tree.variants import dynamic_programming
+
+        tree = self._loop_tree(ProcessTree(label="A"), ProcessTree())
+
+        self.assertEqual(0, dynamic_programming.align_trace_with_process_tree(("A", "A"), tree)[0])
+
     def test_tree_align3_mip(self):
         if test_config.IS_PIPELINE_RUN:
             self.skipTest("Skipping the test in pipelines since pulp can not be installed")
@@ -110,6 +136,16 @@ class AlignmentTest(unittest.TestCase):
         net, im, fm = pm4py.discover_petri_net_inductive(log)
         align_alg.apply(log, net, im, fm, variant=align_alg.Variants.VERSION_DIJKSTRA_LESS_MEMORY)
 
+
+    def test_alignments_variant_return_value(self):
+        import pm4py
+        log = pm4py.read_xes("input_data/roadtraffic100traces.xes")
+        net, im, fm = pm4py.discover_petri_net_inductive(log)
+        alignments = align_alg.apply(log, net, im, fm, variant=align_alg.Variants.VERSION_STATE_EQUATION_A_STAR,
+                                     parameters={align_alg.Parameters.UNPACK_VARIANT_ALIGNMENTS: False})
+
+        self.assertEqual(len(alignments), 10)
+        self.assertEqual(sum(map(lambda a: a[1], alignments)), 100)
 
 
 if __name__ == "__main__":
