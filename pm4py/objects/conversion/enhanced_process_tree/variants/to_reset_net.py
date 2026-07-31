@@ -540,9 +540,6 @@ def recursively_add_tree(
                     bypasses=bypasses,
                 )
 
-            # NOTE: EnhancedProcessTree(), not ProcessTree() -- the recursion
-            # reads .start/.stop/.skip directly, so the silent exit leaf has to
-            # carry those attributes too.
             net, counts, int3 = recursively_add_tree(
                 tree,
                 EnhancedProcessTree(),
@@ -573,7 +570,7 @@ def recursively_add_tree(
         bypasses.append(Bypass(tau_stop, "stop", global_sink))
 
     # A skip annotation creates a bypass to the final place of the parent
-    elif (
+    if (
         tree.skip
         and parent_final_place is not None
         and final_place != parent_final_place
