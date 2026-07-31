@@ -789,6 +789,7 @@ def discover_enhanced_process_tree(
         log: Union[EventLog, pd.DataFrame],
         variant: EnhancedTreeVariant = EnhancedTreeVariant.REFINEMENT_HYBRID,
         noise_threshold: float = 0.0,
+        multi_processing: bool = constants.ENABLE_MULTIPROCESSING_DEFAULT,
         activity_key: str = "concept:name",
         timestamp_key: str = "time:timestamp",
         case_id_key: str = "case:concept:name",
@@ -797,7 +798,8 @@ def discover_enhanced_process_tree(
         tau_deletion_threshold: float = 1.0,
         variant_threshold: float = 0.0,
         skip_coverage_threshold: float = 1.0,
-        optimize_parallel_sequences: bool = False
+        optimize_parallel_sequences: bool = False,
+        disable_fallthroughs: bool = False,
 ) -> EnhancedProcessTree:
     """
         Discovers an Enhanced Process Tree utilizing dynamic routing annotations (start, stop, skip).
@@ -859,6 +861,8 @@ def discover_enhanced_process_tree(
     parameters[enhanced_tree_discovery.Parameters.VARIANT_THRESHOLD] = variant_threshold
     parameters[enhanced_tree_discovery.Parameters.SKIP_COVERAGE_THRESHOLD] = skip_coverage_threshold
     parameters[enhanced_tree_discovery.Parameters.OPTIMIZE_PARALLEL_SEQUENCES] = optimize_parallel_sequences
+    parameters["multiprocessing"] = multi_processing
+    parameters["disable_fallthroughs"] = disable_fallthroughs
 
     return enhanced_tree_discovery.apply(log, variant=variant, parameters=parameters)
 

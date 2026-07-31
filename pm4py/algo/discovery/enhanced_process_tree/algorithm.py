@@ -22,15 +22,25 @@ Contact: info@processintelligence.solutions
 from enum import Enum
 from typing import Optional, Dict, Any, Union
 
+import numpy as np
 import pandas as pd
 
+import pm4py
 from pm4py import util as pmutil
 from pm4py.algo.discovery.enhanced_process_tree.variants.log_refinement import LogRefinement
 from pm4py.algo.discovery.enhanced_process_tree.variants.skip_point_post_processor import SkipPointPostProcessor
 from pm4py.algo.discovery.enhanced_process_tree.variants.tree_post_processor import TreePostProcessor
+from pm4py.algo.discovery.inductive.algorithm import tree_sort
+from pm4py.algo.discovery.inductive.dtypes.im_ds import (
+    IMDataStructureUVCL,
+)
+from pm4py.algo.discovery.inductive.variants.im import IMUVCL
+from pm4py.algo.discovery.inductive.variants.imf import IMFUVCL
 from pm4py.objects.enhanced_process_tree.obj import EnhancedProcessTree
 from pm4py.objects.enhanced_process_tree.utils.generic import convert_to_enhanced_process_tree
 from pm4py.objects.log.obj import EventLog
+from pm4py.objects.process_tree.obj import ProcessTree
+from pm4py.objects.process_tree.utils import generic as pt_util
 from pm4py.util import constants, exec_utils
 from pm4py.util import xes_constants as xes_util
 from pm4py.util.compression import util as comut
@@ -60,28 +70,6 @@ class Variant(Enum):
     # Discovers a standard base tree, then runs A* Alignments to find skips.
     ALIGNMENTS = "alignments"
 
-def _dict_to_event_log(tuple_log: dict, activity_key="concept:name", timestamp_key="time:timestamp"):
-    """
-    Converts the internal compressed dictionary back into a standard PM4Py EventLog.
-    This ensures the output is 100% compatible with top-level PM4Py algorithms.
-    """
-    from pm4py.objects.log.obj import EventLog, Trace, Event
-    from datetime import datetime
-
-    new_log = EventLog()
-    for trace_tuple, frequency in tuple_log.items():
-        for _ in range(frequency):
-            trace = Trace()
-            for activity in trace_tuple:
-                event = Event({
-                    activity_key: activity,
-                    timestamp_key: datetime.now()
-                })
-                trace.append(event)
-            new_log.append(trace)
-    return new_log
-
-
 def apply(
         obj: Union[EventLog, pd.DataFrame, UVCL],
         variant: Variant = Variant.REFINEMENT_HYBRID,
@@ -107,6 +95,7 @@ def apply(
     skip_records = []
 
     if variant == Variant.REFINEMENT_HYBRID:
+        print("Discovering Enhanced Process Tree trough preprocessing.")
         if isinstance(obj, dict):
             uvcl = obj.copy()
         else:
@@ -114,22 +103,40 @@ def apply(
 
         log_refinement = LogRefinement(uvcl, variant_threshold=variant_threshold)
         refined_dict, annotations, skip_records = log_refinement.run(limit=limit)
-        refined_event_log = _dict_to_event_log(refined_dict)
 
-    from pm4py import discover_process_tree_inductive
-    standard_tree = discover_process_tree_inductive(
-        refined_event_log,
-        noise_threshold=noise_threshold,
-        activity_key=ack,
-        timestamp_key=tk,
-        case_id_key=cidk
-    )
-    enhanced_tree = convert_to_enhanced_process_tree(standard_tree, annotations)
+        ds_uvcl = IMDataStructureUVCL(refined_dict)
+        process_tree = ProcessTree()
 
-    if variant == Variant.REFINEMENT_HYBRID:
+        if noise_threshold == 0.0:
+            print("Noise threshold is 0.0: Using Standard Inductive Miner (IM).")
+            im = IMUVCL(parameters)
+            process_tree = im.apply(ds_uvcl, parameters)
+        else:
+            print(f"Noise threshold is {noise_threshold}: Using Inductive Miner Infrequent (IMf).")
+            imf = IMFUVCL(parameters)
+            process_tree = imf.apply(ds_uvcl, parameters)
+
+        process_tree = pt_util.fold(process_tree)
+        tree_sort(process_tree)
+
+        enhanced_tree = convert_to_enhanced_process_tree(process_tree, annotations)
+        print(enhanced_tree)
+
+        print("Adding the Skip annotations.")
         hybrid_processor = SkipPointPostProcessor(parameters=parameters)
         return hybrid_processor.apply(enhanced_tree, refined_dict, skip_records)
-
     else:
+        print("Discovering Enhanced Process Tree trough postprocessing.")
+        from pm4py import discover_process_tree_inductive
+        process_tree = discover_process_tree_inductive(
+            refined_event_log,
+            noise_threshold=noise_threshold,
+            activity_key=ack,
+            timestamp_key=tk,
+            case_id_key=cidk
+        )
+        print("Discovered Process Tree. Convert to Enhanced Process Tree.")
+        enhanced_tree = convert_to_enhanced_process_tree(process_tree, annotations)
+
         alignment_processor = TreePostProcessor(parameters=parameters)
         return alignment_processor.apply(original_log, enhanced_tree)
