@@ -48,7 +48,7 @@ class BaseTreeProcessor:
             b_trig.skip = True
 
         elif lca.operator == Operator.SEQUENCE:
-            if b_trig in b_skips:
+            if lca in b_skips or b_trig in b_skips:
                 b_trig.skip = True
             else:
                 try:
@@ -255,6 +255,8 @@ class BaseTreeProcessor:
         return None
 
     def _get_direct_child_branch(self, lca_node, descendant_node):
+        if lca_node == descendant_node:
+            return lca_node
         curr = descendant_node
         while curr is not None and getattr(curr, 'parent', None) != lca_node:
             curr = curr.parent
