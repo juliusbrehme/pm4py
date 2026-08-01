@@ -46,6 +46,7 @@ class Parameters(Enum):
     # Optional: if True, uses transition *names* (task IDs) as symbols instead of labels.
     # Useful to disambiguate duplicate labels. Still ignores invisible transitions.
     USE_TASK_IDS = "use_task_ids"
+    ALIGNMENT_VARIANT = "alignment_variant"
 
 
 SKIP = ">>"
@@ -77,7 +78,7 @@ def _get_alignment_model_part(step: Any) -> Tuple[Any, Any]:
 
 
 def _extract_model_sequence(
-    alignment: List[Any], *, use_task_ids: bool = False
+        alignment: List[Any], *, use_task_ids: bool = False
 ) -> List[str]:
     """
     Implements the paper's λ̄(γ): projection of *model moves* of an alignment γ,
@@ -107,10 +108,10 @@ def _extract_model_sequence(
 
 
 def _update_prefix_stats(
-    seq: List[str],
-    weight: int,
-    next_by_prefix: Dict[Prefix, Set[str]],
-    prefix_weight: Dict[Prefix, int],
+        seq: List[str],
+        weight: int,
+        next_by_prefix: Dict[Prefix, Set[str]],
+        prefix_weight: Dict[Prefix, int],
 ) -> None:
     """
     For each prefix of seq (excluding the full seq), update:
@@ -133,11 +134,11 @@ def _update_prefix_stats(
 
 
 def apply(
-    log: Union[EventLog, EventStream, pd.DataFrame],
-    net: PetriNet,
-    im: Marking,
-    fm: Marking,
-    parameters: Optional[Dict[Union[str, Parameters], Any]] = None,
+        log: Union[EventLog, EventStream, pd.DataFrame],
+        net: PetriNet,
+        im: Marking,
+        fm: Marking,
+        parameters: Optional[Dict[Union[str, Parameters], Any]] = None,
 ) -> float:
     """
     Alignment-based ETC precision (per "Measuring precision of modeled behavior").
@@ -169,6 +170,11 @@ def apply(
     debug_level = parameters.get("debug_level", 0)
     use_task_ids = bool(exec_utils.get_param_value(Parameters.USE_TASK_IDS, parameters, False))
 
+    petri_semantics = exec_utils.get_param_value("petri_semantics", parameters, None)
+    if petri_semantics is None:
+        from pm4py.objects.petri_net.semantics import ClassicSemantics
+        petri_semantics = ClassicSemantics()
+
     # Convert input to EventLog for consistent handling
     ev_log: EventLog = log_converter.apply(
         log, variant=log_converter.Variants.TO_EVENT_LOG, parameters=parameters
@@ -192,7 +198,14 @@ def apply(
     # 2) Align each variant trace
     align_params = dict(parameters)
     align_params["ret_tuple_as_trans_desc"] = True
-    aligned_variants = petri_alignments.apply(red_log, net, im, fm, parameters=align_params)
+
+    alignment_variant = exec_utils.get_param_value(
+        Parameters.ALIGNMENT_VARIANT,
+        parameters,
+        petri_alignments.DEFAULT_VARIANT
+    )
+
+    aligned_variants = petri_alignments.apply(red_log, net, im, fm, variant=alignment_variant, parameters=align_params)
 
     trans_by_name = {t.name: t for t in net.transitions}
 
@@ -233,7 +246,7 @@ def apply(
                     raise KeyError(
                         f"Transition name {model_trans_name!r} from alignment not found in model."
                     )
-                new_marking = semantics.execute(trans_by_name[model_trans_name], net, marking)
+                new_marking = petri_semantics.execute(trans_by_name[model_trans_name], net, marking)
                 if new_marking is None:
                     raise RuntimeError(
                         f"Alignment tried to fire transition {model_trans_name!r} "
@@ -262,7 +275,8 @@ def apply(
     def enabled_symbols_at(m: Marking) -> Set[str]:
         if m in enabled_cache:
             return enabled_cache[m]
-        vis_trans = pn_align_utils.get_visible_transitions_eventually_enabled_by_marking(net, m)
+        vis_trans = pn_align_utils.get_visible_transitions_eventually_enabled_by_marking(net, m,
+                                                                                         petri_semantics=petri_semantics)
         if use_task_ids:
             enabled = {str(t.name) for t in vis_trans}
         else:

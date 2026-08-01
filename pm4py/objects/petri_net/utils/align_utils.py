@@ -495,7 +495,7 @@ class TweakedSearchTuple:
         return " ".join(string_build)
 
 
-def get_visible_transitions_eventually_enabled_by_marking(net, marking):
+def get_visible_transitions_eventually_enabled_by_marking(net, marking, petri_semantics=None):
     """
     Get visible transitions eventually enabled by marking (passing possibly
     through hidden transitions)
@@ -508,8 +508,12 @@ def get_visible_transitions_eventually_enabled_by_marking(net, marking):
         Current marking
 
     """
+    if petri_semantics is None:
+        from pm4py.objects.petri_net.semantics import ClassicSemantics
+        petri_semantics = ClassicSemantics()
+
     all_enabled_transitions = sorted(
-        list(semantics.enabled_transitions(net, marking)),
+        list(petri_semantics.enabled_transitions(net, marking)),
         key=lambda x: (str(x.name), id(x)),
     )
     initial_all_enabled_transitions_marking_dictio = {}
@@ -529,10 +533,10 @@ def get_visible_transitions_eventually_enabled_by_marking(net, marking):
             if t.label is not None:
                 visible_transitions.add(t)
             else:
-                if semantics.is_enabled(t, net, marking_copy):
-                    new_marking = semantics.execute(t, net, marking_copy)
+                if petri_semantics.is_enabled(t, net, marking_copy):
+                    new_marking = petri_semantics.execute(t, net, marking_copy)
                     new_enabled_transitions = sorted(
-                        list(semantics.enabled_transitions(net, new_marking)),
+                        list(petri_semantics.enabled_transitions(net, new_marking)),
                         key=lambda x: (str(x.name), id(x)),
                     )
                     for t2 in new_enabled_transitions:
