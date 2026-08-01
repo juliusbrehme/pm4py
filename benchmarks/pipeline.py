@@ -21,10 +21,12 @@ from pm4py.objects.petri_net.inhibitor_reset.semantics import InhibitorResetSema
 ## Wie ist das mit Language Size? Einmal playout mit limit of unique variants
 ## und diese dann zählen?
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # --- CONFIGURATION ---
-DATASET_FOLDER = "datasets"
-RESULTS_FILE = "evaluation_results.csv"
-LOG_FILE = "evaluation_pipeline.log"
+DATASET_FOLDER = os.path.join(SCRIPT_DIR, "datasets")
+RESULTS_FILE = os.path.join(SCRIPT_DIR, "evaluation_results.csv") # Save in benchmarks/
+LOG_FILE = os.path.join(SCRIPT_DIR, "evaluation_pipeline.log")
 
 # Hard deadlines. The run happens in a child process, so on timeout the worker
 # (and anything it spawned) is SIGKILLed -- no CPU keeps burning. None = no limit.
