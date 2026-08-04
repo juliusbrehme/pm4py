@@ -2,6 +2,7 @@ import csv
 import itertools
 import logging
 import os
+import resource
 import time
 import traceback
 
@@ -9,14 +10,15 @@ import pm4py
 from benchmarks import phase_timing
 from benchmarks.process_runner import run_phased
 from pm4py import discover_enhanced_process_tree
-from pm4py.algo.discovery.enhanced_process_tree.algorithm import Variant as EnhancedTreeVariant
 from pm4py.algo.conformance.alignments.petri_net import algorithm as alignments_algo
-from pm4py.algo.evaluation.replay_fitness import algorithm as fitness_evaluator
+from pm4py.algo.discovery.enhanced_process_tree.algorithm import Variant as EnhancedTreeVariant
 from pm4py.algo.evaluation.precision import algorithm as precision_evaluator
+from pm4py.algo.evaluation.replay_fitness import algorithm as fitness_evaluator
+from pm4py.algo.evaluation.simplicity.variants import arc_degree as simplicity_arc_degree
+from pm4py.algo.evaluation.simplicity.variants.tree_simplicity import tree_simplicity
 from pm4py.objects.log.importer.xes import importer as xes_importer
-from pm4py.objects.petri_net.utils import align_utils
-# adjust this import to wherever your fork keeps the reset/inhibitor semantics
 from pm4py.objects.petri_net.inhibitor_reset.semantics import InhibitorResetSemantics
+from pm4py.objects.petri_net.utils import align_utils
 
 ## Wie ist das mit Language Size? Einmal playout mit limit of unique variants
 ## und diese dann zählen?
@@ -25,7 +27,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- CONFIGURATION ---
 DATASET_FOLDER = os.path.join(SCRIPT_DIR, "datasets")
-RESULTS_FILE = os.path.join(SCRIPT_DIR, "evaluation_results.csv") # Save in benchmarks/
+RESULTS_FILE = os.path.join(SCRIPT_DIR, "evaluation_results.csv")  # Save in benchmarks/
 LOG_FILE = os.path.join(SCRIPT_DIR, "evaluation_pipeline.log")
 
 # Hard deadlines. The run happens in a child process, so on timeout the worker
@@ -45,7 +47,6 @@ LIMIT = [10]
 # Postprocessing specific parameters
 TAU_DELETION_THRESHOLDS = [1.0]
 ALIGNMENT_THRESHOLDS = [0.0]
-
 
 # --- CSV SCHEMA ---
 # Columns that make a run unique (used for resuming).
@@ -71,7 +72,8 @@ TIME_COLUMNS = (
 )
 
 # Add "Simplicity" here (and to evaluate_reset_net) once it is implemented.
-METRIC_COLUMNS = ["Fitness", "Avg_Trace_Fitness", "Perc_Fit_Traces", "Precision"]
+METRIC_COLUMNS = ["Fitness", "Avg_Trace_Fitness", "Percentage_of_Fitting_Traces", "Precision", "Structural_Readability",
+                  "Arc_Degree_Simplicity", "Language_Size"]
 
 HEADERS = RUN_ID_COLUMNS + ["Status"] + TIME_COLUMNS + METRIC_COLUMNS + ["Error_Message"]
 
@@ -174,8 +176,6 @@ def execute_discovery(config, log):
             )
 
     # 3. Preprocessing Pipeline (Refinement Hybrid Variant)
-    # The inner split (preprocessing vs inductive_miner) comes from the
-    # phase_timing.phase(...) blocks inside discover_enhanced_process_tree.
     elif method == "preprocessing":
         return discover_enhanced_process_tree(
             log,
@@ -294,10 +294,39 @@ def tree_to_net(tree):
     return pm4py.convert_to_petri_net(tree)
 
 
+def calculate_language_size(net, initial_marking, final_marking, num_traces=1000):
+    """
+    Approximates the language size by simulating the net and counting unique variants.
+    Because pm4py.play_out natively detects ResetNets, it automatically applies
+    the correct InhibitorResetSemantics.
+    """
+    # We use the string keys that PM4Py expects internally
+    parameters = {
+        "noTraces": num_traces,
+        "maxTraceLength": 100  # Prevent infinite loops from hanging the process
+    }
+
+    with phase_timing.phase("playout"):
+        simulated_log = pm4py.play_out(net, initial_marking, final_marking, parameters=parameters)
+
+    variants = pm4py.get_variants(simulated_log)
+
+    return len(variants)
+
+
 def evaluate_tree_generic(tree, log):
     """Evaluate the discovered tree: convert to net, then fitness + precision."""
+    readability = tree_simplicity(tree)
     net, initial_marking, final_marking = tree_to_net(tree)
-    return evaluate_reset_net(log, net, initial_marking, final_marking)
+    arc_degree = simplicity_arc_degree.apply(net)
+    language_size = calculate_language_size(net, initial_marking, final_marking)
+    metrics = evaluate_reset_net(log, net, initial_marking, final_marking)
+
+    metrics["Structural_Readability"] = readability
+    metrics["Arc_Degree_Simplicity"] = arc_degree
+    metrics["Language_Size"] = language_size
+
+    return metrics
 
 
 # ---------------------------------------------------------------------------
@@ -334,6 +363,11 @@ def _job(queue, config, dataset_path):
         queue.put(("error", "discovery", f"log loading failed: {e}"))
         return
 
+    # --- SET DISCOVERY CPU LIMIT ---
+    if DISCOVERY_TIMEOUT_SECONDS:
+        # Tell Linux to send SIGKILL if this process exceeds the CPU limit
+        resource.setrlimit(resource.RLIMIT_CPU, (DISCOVERY_TIMEOUT_SECONDS, DISCOVERY_TIMEOUT_SECONDS))
+
     phase_timing.reset()
     start = time.perf_counter()
     try:
@@ -347,6 +381,15 @@ def _job(queue, config, dataset_path):
     if tree is None:
         queue.put(("error", "discovery", "Discovery returned None"))
         return
+
+    # --- SET EVALUATION CPU LIMIT ---
+    if EVALUATION_TIMEOUT_SECONDS:
+        # CPU limits are cumulative for the process lifetime.
+        # We find out how much CPU we've used so far, and add the evaluation time to it.
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        current_cpu_used = int(usage.ru_utime + usage.ru_stime)
+        new_limit = current_cpu_used + EVALUATION_TIMEOUT_SECONDS
+        resource.setrlimit(resource.RLIMIT_CPU, (new_limit, new_limit))
 
     phase_timing.reset()
     start = time.perf_counter()
@@ -441,8 +484,8 @@ def run_pipeline():
             outcome = run_phased(
                 _job,
                 args=(config, dataset_path),
-                phases=(("discovery", DISCOVERY_TIMEOUT_SECONDS),
-                        ("evaluation", EVALUATION_TIMEOUT_SECONDS)),
+                phases=(("discovery", None),
+                        ("evaluation", None)),
             )
 
             write_result_row(run_id, outcome)

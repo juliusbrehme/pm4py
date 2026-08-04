@@ -115,13 +115,20 @@ def run_phased(target, args=(), phases=(("work", None),)):
                     try:
                         message = queue.get(timeout=1.0)
                     except Empty:
-                        out["status"] = "CRASHED"
                         out["failed_phase"] = name
                         out["phase_times"][name] = time.monotonic() - phase_start
-                        out["error"] = (
-                            f"worker died during {name} without reporting "
-                            f"(exit code {proc.exitcode})"
-                        )
+
+                        # Exit code -24 is SIGXCPU, -9 is SIGKILL
+                        if proc.exitcode in (-24, -9):
+                            out["status"] = "TIMEOUT"
+                            out[
+                                "error"] = f"{name} exceeded CPU time limit (OS killed worker with signal {-proc.exitcode})"
+                        else:
+                            out["status"] = "CRASHED"
+                            out["error"] = (
+                                f"worker died during {name} without reporting "
+                                f"(exit code {proc.exitcode})"
+                            )
                         break
                 else:
                     continue
