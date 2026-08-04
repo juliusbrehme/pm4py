@@ -20,9 +20,6 @@ from pm4py.objects.log.importer.xes import importer as xes_importer
 from pm4py.objects.petri_net.inhibitor_reset.semantics import InhibitorResetSemantics
 from pm4py.objects.petri_net.utils import align_utils
 
-## Wie ist das mit Language Size? Einmal playout mit limit of unique variants
-## und diese dann zählen?
-
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- CONFIGURATION ---
@@ -32,8 +29,8 @@ LOG_FILE = os.path.join(SCRIPT_DIR, "evaluation_pipeline.log")
 
 # Hard deadlines. The run happens in a child process, so on timeout the worker
 # (and anything it spawned) is SIGKILLed -- no CPU keeps burning. None = no limit.
-DISCOVERY_TIMEOUT_SECONDS = 600
-EVALUATION_TIMEOUT_SECONDS = 1800
+DISCOVERY_TIMEOUT_SECONDS = 7200
+EVALUATION_TIMEOUT_SECONDS = 7200
 
 # Define parameter grids
 NOISE_THRESHOLDS = [0.0, 0.2]
@@ -365,8 +362,8 @@ def _job(queue, config, dataset_path):
 
     # --- SET DISCOVERY CPU LIMIT ---
     if DISCOVERY_TIMEOUT_SECONDS:
-        # Tell Linux to send SIGKILL if this process exceeds the CPU limit
-        resource.setrlimit(resource.RLIMIT_CPU, (DISCOVERY_TIMEOUT_SECONDS, DISCOVERY_TIMEOUT_SECONDS))
+        _, hard = resource.getrlimit(resource.RLIMIT_CPU)
+        resource.setrlimit(resource.RLIMIT_CPU, (DISCOVERY_TIMEOUT_SECONDS, hard))
 
     phase_timing.reset()
     start = time.perf_counter()
@@ -389,7 +386,13 @@ def _job(queue, config, dataset_path):
         usage = resource.getrusage(resource.RUSAGE_SELF)
         current_cpu_used = int(usage.ru_utime + usage.ru_stime)
         new_limit = current_cpu_used + EVALUATION_TIMEOUT_SECONDS
-        resource.setrlimit(resource.RLIMIT_CPU, (new_limit, new_limit))
+
+        _, hard = resource.getrlimit(resource.RLIMIT_CPU)
+
+        if hard != resource.RLIM_INFINITY:
+            new_limit = min(new_limit, hard)
+
+        resource.setrlimit(resource.RLIMIT_CPU, (new_limit, hard))
 
     phase_timing.reset()
     start = time.perf_counter()
