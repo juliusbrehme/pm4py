@@ -14,8 +14,6 @@ from pm4py.algo.conformance.alignments.petri_net import algorithm as alignments_
 from pm4py.algo.discovery.enhanced_process_tree.algorithm import Variant as EnhancedTreeVariant
 from pm4py.algo.evaluation.precision import algorithm as precision_evaluator
 from pm4py.algo.evaluation.replay_fitness import algorithm as fitness_evaluator
-from pm4py.algo.evaluation.simplicity.variants import arc_degree as simplicity_arc_degree
-from pm4py.algo.evaluation.simplicity.variants.tree_simplicity import tree_simplicity
 from pm4py.objects.log.importer.xes import importer as xes_importer
 from pm4py.objects.petri_net.inhibitor_reset.semantics import InhibitorResetSemantics
 from pm4py.objects.petri_net.utils import align_utils
@@ -23,27 +21,29 @@ from pm4py.objects.petri_net.utils import align_utils
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- CONFIGURATION ---
-DATASET_FOLDER = os.path.join(SCRIPT_DIR, "datasets")
-RESULTS_FILE = os.path.join(SCRIPT_DIR, "evaluation_results.csv")  # Save in benchmarks/
-LOG_FILE = os.path.join(SCRIPT_DIR, "evaluation_pipeline.log")
+TARGET_FOLDER = os.path.join(SCRIPT_DIR, "test_dataset")
+
+DATASET_FOLDER = TARGET_FOLDER
+RESULTS_FILE = os.path.join(TARGET_FOLDER, "evaluation_results.csv")  # Save in benchmarks/
+LOG_FILE = os.path.join(TARGET_FOLDER, "evaluation_pipeline.log")
 
 # Hard deadlines. The run happens in a child process, so on timeout the worker
 # (and anything it spawned) is SIGKILLed -- no CPU keeps burning. None = no limit.
-DISCOVERY_TIMEOUT_SECONDS = 7200
-EVALUATION_TIMEOUT_SECONDS = 7200
+DISCOVERY_TIMEOUT_SECONDS = 900
+EVALUATION_TIMEOUT_SECONDS = 900
 
 # Define parameter grids
-NOISE_THRESHOLDS = [0.0, 0.2]
-OPTIMIZE_PARALLEL_SEQUENCES = [True]
+NOISE_THRESHOLDS = [0.0, 0.2, 0.4, 0.6]
+OPTIMIZE_PARALLEL_SEQUENCES = [False]
 
 # Preprocessing specific parameters
-VARIANT_THRESHOLDS = [0.0]
-SKIP_COVERAGE_THRESHOLDS = [1.0]
-LIMIT = [10]
+VARIANT_THRESHOLDS = [0.0, 0.2, 0.4, 0.6]
+SKIP_COVERAGE_THRESHOLDS = [1.0, 0.75, 0.5]
+LIMIT = [25]  # Use default, static safety limit, no need to grid search
 
 # Postprocessing specific parameters
-TAU_DELETION_THRESHOLDS = [1.0]
-ALIGNMENT_THRESHOLDS = [0.0]
+TAU_DELETION_THRESHOLDS = [1.0, 0.2, 0.4, 0.6]
+ALIGNMENT_THRESHOLDS = [0.0, 0.2, 0.4, 0.6]
 
 # --- CSV SCHEMA ---
 # Columns that make a run unique (used for resuming).
@@ -69,8 +69,10 @@ TIME_COLUMNS = (
 )
 
 # Add "Simplicity" here (and to evaluate_reset_net) once it is implemented.
-METRIC_COLUMNS = ["Fitness", "Avg_Trace_Fitness", "Percentage_of_Fitting_Traces", "Precision", "Structural_Readability",
-                  "Arc_Degree_Simplicity", "Language_Size"]
+METRIC_COLUMNS = ["Fitness", "Avg_Trace_Fitness", "Percentage_of_Fitting_Traces", "Precision", "F1_score",
+                  "Language_Size",
+                  "Total_Nodes", "Start_Nodes", "Stop_Nodes", "Skip_Nodes"
+                  ]
 
 HEADERS = RUN_ID_COLUMNS + ["Status"] + TIME_COLUMNS + METRIC_COLUMNS + ["Error_Message"]
 
@@ -273,11 +275,19 @@ def evaluate_reset_net(log, net, initial_marking, final_marking):
             parameters=precision_parameters
         )
 
+    fitness_val = fitness["log_fitness"]
+    precision_val = precision
+
+    f1_score = 0.0
+    if (fitness_val + precision_val) > 0:
+        f1_score = (2 * fitness_val * precision_val) / (fitness_val + precision_val)
+
     return {
         "Fitness": fitness["log_fitness"],
         "Avg_Trace_Fitness": fitness["average_trace_fitness"],
         "Percentage_of_Fitting_Traces": fitness["percentage_of_fitting_traces"],
         "Precision": precision,
+        "F1_Score": f1_score,
     }
 
 
@@ -300,7 +310,7 @@ def calculate_language_size(net, initial_marking, final_marking, num_traces=1000
     # We use the string keys that PM4Py expects internally
     parameters = {
         "noTraces": num_traces,
-        "maxTraceLength": 100  # Prevent infinite loops from hanging the process
+        "maxTraceLength": 1000  # Prevent infinite loops from hanging the process
     }
 
     with phase_timing.phase("playout"):
@@ -311,17 +321,43 @@ def calculate_language_size(net, initial_marking, final_marking, num_traces=1000
     return len(variants)
 
 
+def count_tree_nodes(node):
+    """
+    Recursively walks the process tree to count the total number of nodes,
+    as well as the specific enhanced annotations (start, stop, skip).
+    """
+    counts = {
+        "Total_Nodes": 0,
+        "Start_Nodes": 0,
+        "Stop_Nodes": 0,
+        "Skip_Nodes": 0
+    }
+
+    def traverse(n):
+        counts["Total_Nodes"] += 1
+
+        if getattr(n, 'start', False):
+            counts["Start_Nodes"] += 1
+        if getattr(n, 'stop', False):
+            counts["Stop_Nodes"] += 1
+        if getattr(n, 'skip', False):
+            counts["Skip_Nodes"] += 1
+
+        for child in n.children:
+            traverse(child)
+
+    traverse(node)
+    return counts
+
+
 def evaluate_tree_generic(tree, log):
     """Evaluate the discovered tree: convert to net, then fitness + precision."""
-    readability = tree_simplicity(tree)
+    node_metrics = count_tree_nodes(tree)
     net, initial_marking, final_marking = tree_to_net(tree)
-    arc_degree = simplicity_arc_degree.apply(net)
     language_size = calculate_language_size(net, initial_marking, final_marking)
     metrics = evaluate_reset_net(log, net, initial_marking, final_marking)
-
-    metrics["Structural_Readability"] = readability
-    metrics["Arc_Degree_Simplicity"] = arc_degree
     metrics["Language_Size"] = language_size
+    metrics.update(node_metrics)
 
     return metrics
 
