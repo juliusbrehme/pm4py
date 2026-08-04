@@ -120,7 +120,6 @@ def apply(
         tree_sort(process_tree)
 
         enhanced_tree = convert_to_enhanced_process_tree(process_tree, annotations)
-        print(enhanced_tree)
 
         print("Adding the Skip annotations.")
         hybrid_processor = SkipPointPostProcessor(parameters=parameters)
