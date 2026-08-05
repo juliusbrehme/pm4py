@@ -3,6 +3,7 @@ import itertools
 import logging
 import os
 import resource
+import sys
 import time
 import traceback
 
@@ -21,7 +22,10 @@ from pm4py.objects.petri_net.utils import align_utils
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- CONFIGURATION ---
-TARGET_FOLDER = os.path.join(SCRIPT_DIR, "test_dataset")
+if len(sys.argv) > 1:
+    TARGET_FOLDER = os.path.join(SCRIPT_DIR, sys.argv[1])
+else:
+    TARGET_FOLDER = os.path.join(SCRIPT_DIR, "datasets")
 
 DATASET_FOLDER = TARGET_FOLDER
 RESULTS_FILE = os.path.join(TARGET_FOLDER, "evaluation_results.csv")  # Save in benchmarks/
