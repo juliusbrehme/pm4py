@@ -287,7 +287,7 @@ def evaluate_reset_net(log, net, initial_marking, final_marking):
         "Avg_Trace_Fitness": fitness["average_trace_fitness"],
         "Percentage_of_Fitting_Traces": fitness["percentage_of_fitting_traces"],
         "Precision": precision,
-        "F1_Score": f1_score,
+        "F1_score": f1_score,
     }
 
 
