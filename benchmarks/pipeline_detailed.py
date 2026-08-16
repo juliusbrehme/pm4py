@@ -137,10 +137,10 @@ def generate_configurations():
     configs.append(make_config("baseline_im", noise=0.0))
 
     # 2. Baseline IMf
-    # for noise in NOISE_THRESHOLDS:
-    #     if float(noise) == 0.0:
-    #         continue
-    #     configs.append(make_config("baseline_imf", noise=noise))
+    for noise in NOISE_THRESHOLDS:
+        if float(noise) == 0.0:
+            continue
+        configs.append(make_config("baseline_imf", noise=noise))
 
     # 3. Preprocessing Grid
     for noise, opt, var_t, skip_t, limit in itertools.product(
@@ -151,11 +151,11 @@ def generate_configurations():
                                    var_thresh=var_t, skip_thresh=skip_t, limit=limit))
 
     # 4. Postprocessing Grid
-    # for noise, opt, tau_t, align_t in itertools.product(
-    #         NOISE_THRESHOLDS, OPTIMIZE_PARALLEL_SEQUENCES, TAU_DELETION_THRESHOLDS, ALIGNMENT_THRESHOLDS
-    # ):
-    #     configs.append(make_config("postprocessing", noise=noise, opt=opt,
-    #                                tau_thresh=tau_t, align_thresh=align_t))
+    for noise, opt, tau_t, align_t in itertools.product(
+            NOISE_THRESHOLDS, OPTIMIZE_PARALLEL_SEQUENCES, TAU_DELETION_THRESHOLDS, ALIGNMENT_THRESHOLDS
+    ):
+        configs.append(make_config("postprocessing", noise=noise, opt=opt,
+                                   tau_thresh=tau_t, align_thresh=align_t))
 
     return configs
 
