@@ -33,21 +33,21 @@ LOG_FILE = os.path.join(TARGET_FOLDER, "evaluation_pipeline.log")
 
 # Hard deadlines. The run happens in a child process, so on timeout the worker
 # (and anything it spawned) is SIGKILLed -- no CPU keeps burning. None = no limit.
-DISCOVERY_TIMEOUT_SECONDS = 5400
-EVALUATION_TIMEOUT_SECONDS = 5400
+DISCOVERY_TIMEOUT_SECONDS = 10800
+EVALUATION_TIMEOUT_SECONDS = 10800
 
 # Define parameter grids
 NOISE_THRESHOLDS = [0.0, 0.2, 0.4, 0.6]
 OPTIMIZE_PARALLEL_SEQUENCES = [False]
 
 # Preprocessing specific parameters
-VARIANT_THRESHOLDS = [0.01, 0.02, 0.05, 0.1]
-SKIP_COVERAGE_THRESHOLDS = [1.0]
+VARIANT_THRESHOLDS = [0.0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6]
+SKIP_COVERAGE_THRESHOLDS = [1.0, 0.75, 0.5]
 LIMIT = [25]  # Use default, static safety limit, no need to grid search
 
 # Postprocessing specific parameters
-TAU_DELETION_THRESHOLDS = [1.0, 0.9, 0.8]
-ALIGNMENT_THRESHOLDS = [0.01, 0.05, 0.1, 0.15]
+TAU_DELETION_THRESHOLDS = [1.0, 0.9, 0.8, 0.6, 0.4, 0.2]
+ALIGNMENT_THRESHOLDS = [0.0, 0.01, 0.05, 0.1, 0.15, 0.2, 0.4, 0.6]
 
 # --- CSV SCHEMA ---
 # Columns that make a run unique (used for resuming).
@@ -109,7 +109,8 @@ def get_completed_runs(file_path):
     if os.path.exists(file_path):
         with open(file_path, mode='r') as f:
             for row in csv.DictReader(f):
-                completed.add(tuple(row.get(col, "None") for col in RUN_ID_COLUMNS))
+                if row.get("Status") == "SUCCESS":
+                    completed.add(tuple(row.get(col, "None") for col in RUN_ID_COLUMNS))
     return completed
 
 
