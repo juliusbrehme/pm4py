@@ -407,13 +407,13 @@ def _job(queue, config, dataset_path):
         resource.setrlimit(resource.RLIMIT_CPU, (DISCOVERY_TIMEOUT_SECONDS, hard))
 
     phase_timing.reset()
-    start = time.perf_counter()
+    start = time.process_time()
     try:
         tree = execute_discovery(config, log)
     except Exception as e:
         queue.put(("error", "discovery", _format_error(e)))
         return
-    discovery_time = time.perf_counter() - start
+    discovery_time = time.process_time() - start
     queue.put(("phase", "discovery", discovery_time, phase_timing.snapshot()))
 
     if tree is None:
@@ -436,13 +436,13 @@ def _job(queue, config, dataset_path):
         resource.setrlimit(resource.RLIMIT_CPU, (new_limit, hard))
 
     phase_timing.reset()
-    start = time.perf_counter()
+    start = time.process_time()
     try:
         metrics = evaluate_tree_generic(tree, log)
     except Exception as e:
         queue.put(("error", "evaluation", _format_error(e)))
         return
-    queue.put(("phase", "evaluation", time.perf_counter() - start, phase_timing.snapshot()))
+    queue.put(("phase", "evaluation", time.process_time() - start, phase_timing.snapshot()))
     queue.put(("result", metrics))
 
 

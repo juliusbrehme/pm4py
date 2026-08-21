@@ -48,8 +48,8 @@ def record(name, seconds):
 @contextmanager
 def phase(name):
     """Time the enclosed block and add it to the registry under `name`."""
-    start = time.perf_counter()
+    start = time.process_time()
     try:
         yield
     finally:
-        record(name, time.perf_counter() - start)
+        record(name, time.process_time() - start)
