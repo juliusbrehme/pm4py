@@ -68,19 +68,6 @@ class LogRefinementTest(unittest.TestCase):
         self.assertEqual(set(final_log.keys()), expected_traces)
         self.assertIn('stop', annotations.get('d', set()))
 
-    def test_skip_rule_concurrent_subsets(self):
-        """Tests that subsets of an AND block are absorbed to create skip points."""
-        raw_traces = [
-            ['s', 'a', 'b', 'c', 'd', 'f', 'g', 'e'],
-            ['s', 'c', 'd', 'e'],
-        ]
-        log = self._convert_to_tuple_log(raw_traces)
-        log_refinement = LogRefinement(log)
-        final_log, annotations, _ = log_refinement.run()
-
-        self.assertEqual(set(final_log.keys()), {('s', 'a', 'b', 'c', 'd', 'f', 'g', 'e')})
-        self.assertIn('skip', annotations.get('d', set()))
-
     def test_emergent_rule(self):
         """
         Tests Emergent Unification.

@@ -172,7 +172,6 @@ def recursively_add_tree(
         tau_start = get_new_hidden_trans(counts, type_trans="tau_start")
         net.transitions.add(tau_start)
 
-        # Connect: global source -> tau_start -> local initial place
         add_arc_from_to(global_source, tau_start, net)
         add_arc_from_to(tau_start, initial_place, net)
 
@@ -210,8 +209,6 @@ def recursively_add_tree(
     if tree.operator == Operator.XOR:
         for subtree in tree_childs:
             if subtree.start and global_source is not None:
-                # Isolate the branch entry so the start bypass cannot be taken
-                # by the other branches of the choice.
                 isolated_start_place = get_new_place(counts)
                 net.places.add(isolated_start_place)
 
@@ -227,8 +224,6 @@ def recursively_add_tree(
                 target_initial_place = initial_place
 
             if subtree.stop and global_sink is not None:
-                # Isolate the branch exit, then rejoin the shared XOR end place
-                # through a silent transition.
                 isolated_place = get_new_place(counts)
                 net.places.add(isolated_place)
 
@@ -336,8 +331,6 @@ def recursively_add_tree(
         has_internal_start = any(contains_start(child) for child in tree_childs)
 
         if has_internal_start and global_source is not None:
-            # The AND block intercepts the start signal, so that starting
-            # inside one branch still enables all the other branches.
             tau_start_split = get_new_hidden_trans(
                 counts, type_trans="tau_start_split"
             )
@@ -345,7 +338,6 @@ def recursively_add_tree(
             add_arc_from_to(global_source, tau_start_split, net)
 
         for subtree in tree_childs:
-            # Explicitly create the normal starting place for this branch
             subtree_init_place = get_new_place(counts)
             net.places.add(subtree_init_place)
             add_arc_from_to(new_initial_trans, subtree_init_place, net)
@@ -354,15 +346,12 @@ def recursively_add_tree(
 
             if has_internal_start and global_source is not None:
                 if contains_start(subtree):
-                    # This branch holds the start node: pass a synced source down
                     branch_sync_source = get_new_place(counts)
                     net.places.add(branch_sync_source)
                     add_arc_from_to(tau_start_split, branch_sync_source, net)
                     branch_global_source = branch_sync_source
                 else:
-                    # This branch does not hold the start node: it starts normally.
                     add_arc_from_to(tau_start_split, subtree_init_place, net)
-                    # Sever the source so it does not build a false bypass inside itself
                     branch_global_source = None
 
             net, counts, intermediate_place = recursively_add_tree(
@@ -382,9 +371,6 @@ def recursively_add_tree(
         and_places = set(net.places) - places_before
         new_bypasses = bypasses[bypasses_before:]
 
-        # Leaving an AND block through a bypass must clear the tokens that are
-        # still sitting in the concurrent branches, otherwise the net would keep
-        # firing them after the process has already left the block.
         for bypass in new_bypasses:
             if bypass.kind == "stop":
                 is_valid_bypass = True
@@ -398,7 +384,6 @@ def recursively_add_tree(
 
             regular_inputs = {arc.source for arc in bypass.transition.in_arcs}
             for p in and_places:
-                # No reset arc if the place is already a regular input of the bypass
                 if p not in regular_inputs:
                     add_reset_arc_from_to(p, bypass.transition, net)
 
@@ -559,7 +544,6 @@ def recursively_add_tree(
             add_arc_from_to(looping_place, loop_trans, net)
             add_arc_from_to(loop_trans, initial_place, net)
 
-    # A stop annotation creates a bypass straight to the global sink
     if tree.stop and global_sink is not None and final_place != global_sink:
         tau_stop = get_new_hidden_trans(counts, type_trans="tau_stop")
         net.transitions.add(tau_stop)
@@ -569,7 +553,6 @@ def recursively_add_tree(
 
         bypasses.append(Bypass(tau_stop, "stop", global_sink))
 
-    # A skip annotation creates a bypass to the final place of the parent
     if (
         tree.skip
         and parent_final_place is not None

@@ -22,10 +22,8 @@ Contact: info@processintelligence.solutions
 from enum import Enum
 from typing import Optional, Dict, Any, Union
 
-import numpy as np
 import pandas as pd
 
-import pm4py
 from pm4py import util as pmutil
 from pm4py.algo.discovery.enhanced_process_tree.variants.log_refinement import LogRefinement
 from pm4py.algo.discovery.enhanced_process_tree.variants.skip_point_post_processor import SkipPointPostProcessor
