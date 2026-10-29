@@ -128,6 +128,8 @@ class LogRefinement:
 
                             if "replacements" in result:
                                 for old_trace, new_trace in result["replacements"].items():
+                                    if old_trace in traces_to_delete:
+                                        continue
 
                                     added_elements = list((Counter(new_trace) - Counter(old_trace)).elements())
                                     if added_elements:

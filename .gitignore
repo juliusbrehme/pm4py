@@ -138,3 +138,7 @@ dmypy.json
 
 # Renovate bot
 renovate.json5
+
+benchmarks/
+examples_julius/
+

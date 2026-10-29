@@ -91,6 +91,29 @@ class LogRefinementTest(unittest.TestCase):
         self.assertIn('stop', annotations.get('b', set()))
         self.assertIn('stop', annotations.get('d', set()))
 
+    def test_frequency_preserved_with_multiple_matches(self):
+        """
+        Tests that a shorter trace matching several longer traces moves its frequency only once,
+        while the skip candidates of all matches are still recorded.
+        """
+        raw_traces = [
+            ['s', 'a', 'b', 'c', 'd', 'e'],
+            ['s', 'c', 'd', 'a', 'b', 'e'],
+            ['s', 'a', 'c', 'b', 'd', 'e'],
+            ['s', 'a', 'b', 'e'],
+            ['s', 'c', 'd', 'e']
+        ]
+        log = self._convert_to_tuple_log(raw_traces)
+        log_refinement = LogRefinement(log)
+        final_log, _, skip_records = log_refinement.run()
+
+        expected_traces = {('s', 'a', 'b', 'c', 'd', 'e'), ('s', 'c', 'd', 'a', 'b', 'e'), ('s', 'a', 'c', 'b', 'd', 'e')}
+        self.assertEqual(set(final_log.keys()), expected_traces)
+        self.assertEqual(sum(final_log.values()), len(raw_traces))
+
+        self.assertIn({'trigger_label': 'b', 'skipped_labels': ['c', 'd']}, skip_records)
+        self.assertIn({'trigger_label': 'd', 'skipped_labels': ['a', 'b']}, skip_records)
+
 
 if __name__ == '__main__':
     unittest.main()
